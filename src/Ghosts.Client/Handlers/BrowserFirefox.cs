@@ -187,6 +187,10 @@ namespace Ghosts.Client.Handlers
                 {
                     options.SetPreference("permissions.default.script", 2);
                 }
+                if (handler.HandlerArgs.ContainsKeyWithOption("accept-insecure-certificates", "true"))
+		{
+                    options.AcceptInsecureCertificates = true;
+                }
             }
 
             options.SetPreference("permissions.default.cookies", 2);

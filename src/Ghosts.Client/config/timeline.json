@@ -81,6 +81,7 @@
         "stickiness-depth-min": "3",
         "stickiness-depth-max": "15",
         "incognito": "true",
+	"accept-insecure-certificates": "true",
         "javascript-enable": "true",
         "visited-remember": "10",
         "actions-before-restart": 100,
