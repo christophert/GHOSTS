@@ -144,10 +144,6 @@ namespace Ghosts.Client.Handlers
                             var rand = RandomFilename.Generate();
 
                             var defaultSaveDirectory = timelineEvent.CommandArgs[0].ToString();
-                            if (defaultSaveDirectory.Contains("%"))
-                            {
-                                defaultSaveDirectory = Environment.ExpandEnvironmentVariables(defaultSaveDirectory);
-                            }
 
                             try
                             {
@@ -170,6 +166,11 @@ namespace Ghosts.Client.Handlers
                             catch (Exception e)
                             {
                                 Log.Trace($"save-array exception: {e}");
+                            }
+
+                            if (defaultSaveDirectory.Contains("%"))
+                            {
+                                defaultSaveDirectory = Environment.ExpandEnvironmentVariables(defaultSaveDirectory);
                             }
 
                             if (!Directory.Exists(defaultSaveDirectory))
