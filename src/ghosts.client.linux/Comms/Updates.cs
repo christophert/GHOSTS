@@ -10,7 +10,6 @@ using ghosts.client.linux.Infrastructure;
 using ghosts.client.linux.timelineManager;
 using Ghosts.Domain;
 using Ghosts.Domain.Code;
-using Ghosts.Domain.Code.Helpers;
 using Ghosts.Domain.Messages.MesssagesForServer;
 using NLog;
 using Newtonsoft.Json;
@@ -58,7 +57,7 @@ namespace ghosts.client.linux.Comms
             {
                 try
                 {
-                    string s = string.Empty;
+                    var s = string.Empty;
                     using (var client = WebClientBuilder.Build(machine))
                     {
                         try
@@ -238,12 +237,6 @@ namespace ghosts.client.linux.Comms
                 {
                     if (File.Exists(fileName))
                     {
-                        while (new FileInfo(fileName).IsFileLocked())
-                        {
-                            var sleepTime = 15000;
-                            _log.Trace($"{fileName} is locked, sleeping for {sleepTime}...");
-                            Thread.Sleep(sleepTime);
-                        }
                         PostResults(fileName, machine, postUrl);
                         _log.Trace($"{fileName} posted successfully...");
                     }
@@ -265,16 +258,10 @@ namespace ghosts.client.linux.Comms
                 // look for other result files that have not been posted
                 try
                 {
-                    foreach (var file in Directory.GetFiles(Path.GetDirectoryName(fileName) ?? throw new InvalidOperationException("Path declaration failed")))
+                    foreach (var file in Directory.GetFiles(Path.GetDirectoryName(fileName), "*.log" ?? throw new InvalidOperationException("Path declaration failed")))
                     {
                         if (!file.EndsWith("app.log") && file != fileName)
                         {
-                            while(new FileInfo(file).IsFileLocked())
-                            {
-                                var sleepTime = 15000;
-                                _log.Trace($"{file} is locked, sleeping for {sleepTime}...");
-                                Thread.Sleep(sleepTime);
-                            }
                             PostResults(file, machine, postUrl, true);
                             _log.Trace($"{fileName} posted successfully...");
                         }
@@ -296,31 +283,57 @@ namespace ghosts.client.linux.Comms
 
         private static void PostResults(string fileName, ResultMachine machine, string postUrl, bool isDeletable = false)
         {
-            var r = new TransferLogDump {Log = File.ReadAllText(fileName) };
-            var payload = JsonConvert.SerializeObject(r);
-            if (Program.Configuration.ClientResults.IsSecure)
+            var tempFile = $"{fileName.Replace("clientupdates.log", Guid.NewGuid().ToString())}.proc";
+            File.Copy(fileName, tempFile);
+            File.WriteAllText(fileName, "");
+            
+            var rawLogContents = File.ReadAllText(tempFile);
+            
+            try
             {
-                payload = Crypto.EncryptStringAes(payload, machine.Name);
-                payload = Base64Encoder.Base64Encode(payload);
+                var r = new TransferLogDump {Log = rawLogContents};
+                var payload = JsonConvert.SerializeObject(r);
+                if (Program.Configuration.ClientResults.IsSecure)
+                {
+                    payload = Crypto.EncryptStringAes(payload, machine.Name);
+                    payload = Base64Encoder.Base64Encode(payload);
 
-                var p = new EncryptedPayload {Payload = payload};
+                    var p = new EncryptedPayload {Payload = payload};
 
-                payload = JsonConvert.SerializeObject(p);
+                    payload = JsonConvert.SerializeObject(p);
+                }
+
+                using (var client = WebClientBuilder.Build(machine))
+                {
+                    client.Headers[HttpRequestHeader.ContentType] = "application/json";
+                    client.UploadString(postUrl, payload);
+                }
             }
-
-            using (var client = WebClientBuilder.Build(machine))
+            catch (Exception e)
             {
-                client.Headers[HttpRequestHeader.ContentType] = "application/json";
-                client.UploadString(postUrl, payload);
+                try
+                {
+                    //put the temp file contents back
+                    File.AppendAllText(fileName, rawLogContents);
+                    File.Delete(tempFile);
+                }
+                catch 
+                { 
+                    _log.Trace($"Log post failure cleanup also failed: {e}");
+                }
+                throw;
             }
-
+            
+            //delete the temp file we used for reading
+            File.Delete(tempFile);
+            
             if (isDeletable)
-            {
+            { 
                 File.Delete(fileName);
             }
             else
             {
-                File.WriteAllText(fileName, string.Empty);
+                File.WriteAllText(fileName, "");
             }
 
             _log.Trace($"{DateTime.Now} - {fileName} posted to server successfully");
